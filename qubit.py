@@ -1,5 +1,6 @@
 from qiskit import QuantumCircuit
 from qiskit_aer import AerSimulator
+from qiskit import ClassicalRegister
 import matplotlib.pyplot as plt
 
 def create_circuit(num: int, path: list[int]):
@@ -51,13 +52,20 @@ def create_ladder_node(L: int):
         graph[i].append(i + L + 1)
         graph[i + L + 1].append(i)
 
+    return graph
+
 
 if __name__ == "__main__":
 
+    L = 5
+    num_qubit = 2 * L + 2
     circuit_path = [0, 1, 7, 8, 9, 3, 4, 5]
-    final_qc = create_circuit(12, circuit_path)
+    final_qc = create_circuit(num_qubit, circuit_path)
     # measure qubit
-    final_qc.measure_all()
+    cr = ClassicalRegister(2, 'meas')
+    final_qc.add_register(cr)
+    final_qc.measure(circuit_path[0], 0)
+    final_qc.measure(circuit_path[-1], 1)
 
     # quantum simulator 
     simulator = AerSimulator()
