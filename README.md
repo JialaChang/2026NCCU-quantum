@@ -24,6 +24,7 @@ quantum_project/
     ├── libstdc++-6.dll       # MSYS2 依賴函式庫
     ├── libgcc_s_seh-1.dll    # MSYS2 依賴函式庫
     └── libwinpthread-1.dll   # MSYS2 依賴函式庫
+```
 
 ## 執行與部署說明
 
@@ -39,3 +40,12 @@ quantum_project/
 3.  執行 `QuantumSimulator.exe` 即可啟動模擬器。
 
 *注意：若移動 `_internal` 資料夾或其中的 DLL 檔案，將導致程式無法載入 Python 運行時環境。*
+
+## 技術來源與致謝 (Credits & Acknowledgments)
+
+本專案之底層量子模擬運算核心由以下開源專案支援，特此致謝：
+
+*   **C++ 模擬引擎**：[Qubit_Simulation](https://github.com/ufve0704terfy/Qubit_Simulation)
+*   **技術提供者**：[ufve0704terfy](https://github.com/ufve0704terfy)
+
+該核心負責處理高精度量子態演化及物理誤差模型之運算，本專案則基於此引擎開發前端自動化路由與視覺化介面。
