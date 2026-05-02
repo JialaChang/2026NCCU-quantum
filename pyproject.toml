@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "matplotlib>=3.10.9",
+    "networkx>=3.6.1",
     "pybind11>=3.0.4",
     "pylatexenc>=2.10",
     "qiskit>=2.4.1",
