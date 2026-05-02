@@ -10,8 +10,7 @@ from qiskit import QuantumCircuit, ClassicalRegister
 # =========================================================
 def setup_environment():
     """
-    設定 Windows DLL 搜尋路徑並動態載入 C++ 編譯模組 (quantum_cpp.pyd)。
-    解決 MSYS2/MinGW 環境下動態連結庫缺失的問題。
+    設定 Windows DLL 搜尋路徑並動態載入 C++ 編譯模組
     """
     current_dir = os.path.dirname(os.path.abspath(__file__))
     try:

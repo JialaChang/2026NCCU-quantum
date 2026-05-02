@@ -8,6 +8,7 @@ dependencies = [
     "matplotlib>=3.10.9",
     "networkx>=3.6.1",
     "pybind11>=3.0.4",
+    "pyinstaller>=6.20.0",
     "pylatexenc>=2.10",
     "qiskit>=2.4.1",
     "qiskit-aer>=0.17.2",
