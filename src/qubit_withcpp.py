@@ -4,6 +4,7 @@ from collections import deque
 import networkx as nx
 import matplotlib.pyplot as plt
 from qiskit import QuantumCircuit, ClassicalRegister
+from qiskit.circuit import Gate
 
 
 # =========================================================
@@ -101,19 +102,16 @@ def find_best_path(graph, start, end, broken_nodes=None):
 # 量子電路生成與 C++ 模擬核心
 # =========================================================
 def to_cpp_expression(num_qubits, path, target_bell='Phi+'):
-    """
-    將路由路徑與目標貝爾態轉換為 C++ 模擬器之指令字串。
-    支援位元翻轉 (X) 與相位翻轉 (Z) 以產生四種貝爾基底。
-    """
+    """將路由路徑與目標貝爾態轉換為 C++ 模擬器之指令字串。"""
     if not path:
         return ""
     instr = [f"{num_qubits}"]
     
-    # 於起點與次節點建立基本糾纏態 (Phi+)
+    # 建立基本糾纏態 (Phi+)
     instr.append(f"{{H,{path[0]}}}")
     instr.append(f"{{CNOT,{path[0]},{path[1]}}}")
     
-    # 根據目標貝爾態施加對應之邏輯閘
+    # 目標貝爾態轉換
     if target_bell in ['Phi-', 'Psi-']:
         instr.append(f"{{Z,{path[0]}}}")
     if target_bell in ['Psi+', 'Psi-']:
@@ -122,6 +120,15 @@ def to_cpp_expression(num_qubits, path, target_bell='Phi+'):
     # 沿路徑傳遞量子態 (SWAP)
     for i in range(1, len(path) - 1):
         instr.append(f"{{SWAP,{path[i]},{path[i+1]}}}")
+        
+    # [核心修正] 判斷目標貝爾態的正確宇稱
+    # Phi 家族 (|00>, |11>) 預期宇稱為 0 (偶)
+    # Psi 家族 (|01>, |10>) 預期宇稱為 1 (奇)
+    expected_parity = 0 if target_bell in ['Phi+', 'Phi-'] else 1
+        
+    # 在單點測量前，先進行全域宇稱測量 (明確傳入預期宇稱值)
+    # 雖然這裡只是單純的測量，沒有接 If，但明確印出有助於除錯
+    instr.append(f"{{Parity,{path[0]},{path[-1]},{expected_parity}}}")
         
     # 測量起點與終點位元
     instr.extend([f"{{M,{path[0]}}}", f"{{M,{path[-1]}}}"])
@@ -149,7 +156,12 @@ def build_qiskit_circuit(num_qubit, path, target_bell='Phi+'):
     # 沿路徑進行 SWAP
     for i in range(1, len(path) - 1):
         qc.swap(path[i], path[i+1])
+
+    # 畫出分隔線與自定義的 Parity Check 區塊
+    parity_gate = Gate(name='Parity Check', num_qubits=2, params=[])
+    qc.append(parity_gate, [path[0], path[-1]])
         
+    # 標準單點測量
     cr = ClassicalRegister(2, 'meas')
     qc.add_register(cr)
     qc.measure(path[0], 0)
@@ -159,62 +171,81 @@ def build_qiskit_circuit(num_qubit, path, target_bell='Phi+'):
 
 def run_cpp_simulation(num_qubit, path, cpp_engine, target_bell='Phi+'):
     """
-    初始化並執行 C++ 後端高精度物理模擬。
-    包含單次快照(計算累積誤差)與多次測量(Shots僅統計目標雙位元之機率分佈)。
+    初始化並執行 C++ 後端高精度物理模擬，
+    包含詳細的誤差擴散軌跡與宇稱守恆報告。
     """
     if not path:
         return
         
-    # 1. 執行單次模擬以獲取物理誤差快照 (Snapshot)
+    # 執行單次模擬以獲取物理誤差快照 (Snapshot)
     sim_single = cpp_engine.QubitSimulation(num_qubit)
     cfg = cpp_engine.SimulationConfig()
-    cfg.error_rate = 0.02
+    cfg.error_rate = 0.05  # 設定 5% 雜訊
     cfg.apply_errors = True  
+    cfg.track_errors = True
 
     cpp_expr = to_cpp_expression(num_qubit, path, target_bell)
     result = cpp_engine.CircuitExpression.Parse(cpp_expr).ExecuteWithCapture(sim_single, cfg)
-    final_snap = result.snapshots[-1]
+    pre_meas_snap = None
+    for snap in result.snapshots:
+        if "Parity" in snap.step_label:
+            break
+        pre_meas_snap = snap
 
-    # 2. 執行多次測量 (Shots) 以統計目標雙位元 (e0, e1) 的機率分佈
+    # 2. 執行多次測量 (Shots) 以統計目標雙位元
     shots = 1000
     counts = {'00': 0, '01': 0, '10': 0, '11': 0}
+    
+    # 根據目標貝爾態推算理論上應得的宇稱 (Phi=偶數0, Psi=奇數1)
+    expected_parity = 0 if target_bell in ['Phi+', 'Phi-'] else 1
+    parity_success_count = 0
     
     for _ in range(shots):
         sim_shot = cpp_engine.QubitSimulation(num_qubit)
         cpp_engine.CircuitExpression.Parse(cpp_expr).ExecuteWithCapture(sim_shot, cfg)
         
-        # 僅捕捉起點與終點的測量結果
         m_start = sim_shot.GetMeasurementResult(path[0])
         m_end = sim_shot.GetMeasurementResult(path[-1])
         counts[f"{m_start}{m_end}"] += 1
+        
+        # 驗證宇稱守恆：(m_start + m_end) mod 2 是否等於預期宇稱
+        if m_start != -1 and m_end != -1:
+            actual_parity = (m_start + m_end) % 2
+            if actual_parity == expected_parity:
+                parity_success_count += 1
 
-    # 輸出終端機標準化報表 (固定總寬度 100 字元)
-    print(f"\n{'-'*100}\n{'C++ QUANTUM SIMULATION REPORT':^100}\n{'-'*100}")
-    print(f"{'Configuration':<35} | {'Value':>62}")
+    # 輸出終端機標準化報表 (已整合 ERROR TRACE 區塊)
+    print(f"\n{'-'*100}\n{'STEP-BY-STEP ERROR DIFFUSION TRACE':^100}\n{'-'*100}")
+    for snap in result.snapshots:
+        if snap.error_record.occurred:
+            err_type = str(snap.error_record.type).split('.')[-1]
+            print(f"[Step {snap.step_index+1:02d}] {snap.step_label:<20} | {err_type}-Error occurred on Q[{snap.error_record.affected_qubit}]!")
+        if "Parity" in snap.step_label:
+            print(f"[Step {snap.step_index+1:02d}] {snap.step_label:<20} | Parity Measured! Wavefunction collapsed, error probability flushed.")
+
+    # [整合輸出] 將保真度、誤差分佈與宇稱守恆合併為單一分析區塊
+    print(f"\n{'-'*100}\n{'INTEGRATED QUANTUM FIDELITY & PARITY ANALYSIS':^100}\n{'-'*100}")
+    print(f"Target State         : {target_bell} (Expected Parity: {'Even(0)' if expected_parity==0 else 'Odd(1)'})")
+    print(f"Hardware Error Rate  : {cfg.error_rate*100:.1f}% per multi-qubit gate")
+    print(f"Total Physical Errors: {result.snapshots[-1].cumulative_errors} hits during this run")
     print(f"{'-'*100}")
-    print(f"{'Total Qubits':<35} | {num_qubit:>62}")
-    print(f"{'Target Bell State':<35} | {target_bell:>62}")
-    print(f"{'Error Rate':<35} | {cfg.error_rate:>61.2%}")
-    print(f"{'C++ Command':<35} | {cpp_expr:>62}") 
-    print(f"{'-'*100}")
-    print(f"{'Execution Results (Last Snapshot)':<35} | {'Value':>62}")
-    print(f"{'-'*100}")
-    print(f"{'Cumulative Errors':<35} | {final_snap.cumulative_errors:>62}")
     
-    # 獨立出目標雙位元的聯合機率統計區塊
-    title = f"TARGET QUBITS DISTRIBUTION: Q[{path[0]}] & Q[{path[-1]}] (1000 Shots)"
-    print(f"\n{'-'*100}\n{title:^100}\n{'-'*100}")
+    # 1. 測量前的理論誤差累積 (顯示非零值)
+    print("Pre-Measurement Error Probability (Before Collapse):")
+    if pre_meas_snap and pre_meas_snap.qubit_error_accum:
+        for q, err in enumerate(pre_meas_snap.qubit_error_accum):
+            if err > 1e-9:
+                print(f"  > Q[{q:<2}] accumulated error: {err*100:.2f}%")
+    else:
+        print("  > No significant errors accumulated prior to measurement.")
+
+    # 2. 目標位元分佈與宇稱守恆率
+    print(f"\nMeasurement Distribution (1000 Shots):")
     for state, count in counts.items():
         if count > 0:
-            print(f"|{state}> | {count/shots*100:>85.1f}%")
-    
-    print(f"\n{'-'*100}\n{'QUBIT ERROR DISTRIBUTION':^100}\n{'-'*100}")
-    
-    if not final_snap.qubit_error_accum:
-        print(f"{'[Warning] Vector empty. Is error accumulation implemented?':^100}")
-    else:
-        for q, err in enumerate(final_snap.qubit_error_accum):
-            print(f"Q[{q:<2}] | {err*100:>90.2f}%")
+            print(f"  > |{state}> : {count/shots*100:.1f}%")
+            
+    print(f"\n[Result] Parity Conservation Rate : {parity_success_count/shots*100:.1f}%")
     print(f"{'-'*100}\n")
 
 # =========================================================
