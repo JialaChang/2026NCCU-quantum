@@ -5,6 +5,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from qiskit import QuantumCircuit, ClassicalRegister
 
+
 # =========================================================
 # 環境設定與 C++ 量子模擬引擎載入
 # =========================================================
@@ -33,6 +34,7 @@ def setup_environment():
         sys.exit(1)
 
 quantum_cpp = setup_environment()
+
 
 # =========================================================
 # 硬體拓樸建立與尋路演算法
@@ -93,6 +95,7 @@ def find_best_path(graph, start, end, broken_nodes=None):
                 backward[neighbor] = curr
                 queue.append(neighbor)
     return []
+
 
 # =========================================================
 # 量子電路生成與 C++ 模擬核心
