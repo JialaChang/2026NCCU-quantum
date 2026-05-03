@@ -43,38 +43,34 @@ quantum_project/
 本專案使用 `pyproject.toml` 管理依賴項。請選擇以下方式之一建置環境：
 
 #### 方案 1：使用 uv (推薦)
-**安裝 uv：**
+
 ```bash
+# 步驟 1：安裝 uv
 pip install uv
-```
 
-**建置環境與安裝依賴：**
-```bash
+# 步驟 2：建置環境與安裝依賴
 uv sync
-```
 
-**啟動虛擬環境並執行：**
-```bash
+# 步驟 3：執行主程式
 uv run python src/qubit.py
 ```
 
 #### 方案 2：使用 pip
-**建立虛擬環境：**
+
 ```bash
+# 步驟 1：建立虛擬環境
 python -m venv .venv
-```
 
-**啟動虛擬環境：**
-- Windows: `.venv\Scripts\activate`
-- Linux/macOS: `source .venv/bin/activate`
+# 步驟 2：啟動虛擬環境
+# Linux/macOS
+source .venv/bin/activate
+# Windows
+.venv\Scripts\Activate.ps1
 
-**安裝依賴：**
-```bash
+# 步驟 3：安裝依賴
 pip install -e .
-```
 
-**執行主程式：**
-```bash
+# 步驟 4：執行主程式
 python src/qubit.py
 ```
 
@@ -124,63 +120,63 @@ pyinstaller --onefile --windowed src/qubit.py
 4. 輸入純化閥值 (預設 0.78)
 ```
 
-程式將執行以下流程：
-- 建立梯形拓樸結構
-- 利用 BFS 規劃從起點 (Q[0]) 至終點 (Q[L]) 的最短路由
-- 生成指定貝爾態的量子電路
-- 執行 C++ 後端物理誤差模擬
-- 統計 1000 次測量的聯合機率分佈
-- 輸出保真度分析與宇稱守恆率
-- 顯示硬體拓樸與量子電路的雙視窗儀表板
-
-**典型輸出範例：**
+**輸出範例：**
 ```
-[Info] Target Bell State set to: Phi+
-[Info] Planning path from Q[0] to Q[5]...
-[Success] Path mapped: [0, 1, 2, 3, 4, 5]
+----------------------------------------------------------------------------------------------------
+                           STEP-BY-STEP ERROR DIFFUSION TRACE
+----------------------------------------------------------------------------------------------------
+[Step 02] {CNOT,0,1}          | Depolarizing-Error occurred on Q[0]!
 
-INTEGRATED QUANTUM FIDELITY & PARITY ANALYSIS
-─────────────────────────────────────────────────
+----------------------------------------------------------------------------------------------------
+                      INTEGRATED QUANTUM FIDELITY & PARITY ANALYSIS
+----------------------------------------------------------------------------------------------------
 Target State         : Phi+ (Expected Parity: Even(0))
 Hardware Error Rate  : 5.0% per multi-qubit gate
-Total Physical Errors: 3 hits during this run
-─────────────────────────────────────────────────
-Measurement Distribution (1000 Shots):
-  > |00> : 45.2%
-  > |11> : 44.8%
+Total Physical Errors: 1 hits during this run
+----------------------------------------------------------------------------------------------------
+Pre-Measurement Error Probability (Before Collapse):
+  > Q[0] accumulated error: 3.47%
+  > Q[1] accumulated error: 3.47%
 
-[Result] Parity Conservation Rate : 90.0%
+Measurement Distribution (1000 Shots):
+  > |00> : 47.3%
+  > |01> : 2.5%
+  > |11> : 47.8%
+  > |10> : 2.4%
+
+[Result] Parity Conservation Rate : 95.1%
+----------------------------------------------------------------------------------------------------
 ```
 
 ### 範例 2：保真度優化模擬 (purify.py)
 直接執行 `python src/purify.py` 將演示量子糾纏態的純化優化過程。
 
-**預設參數：**
-```python
-TOTAL_LENGTH = 20       # 梯子長度
-ERROR_RATE = 0.05       # 5% 物理錯誤率
-THRESHOLD = 0.78        # 純化觸發閥值
-```
-
 **輸出內容：**
-1. **純化命令序列**：列出每個觸發純化的節點及其對應的 C++ 指令
-   ```
-   [Node 03 Triggered]
-   High-Level Cmd : {M,2,3},{M,3,4},{P,4,5}
-   C++ Parsed Str : {SWAP,2,3},{CNOT,3,24},{SWAP,24,25},...
-   ```
 
-2. **決策日誌**：詳細的逐步決策表格
-   ```
-   Node | Operation | Fidelity | P_succ | Action Detail
-   ─────┼───────────┼──────────┼────────┼─────────────────
-      0 | Init      |   1.0000 |    -   | System Initialization
-      1 | Decay     |   0.9750 |    -   | Natural decay: 1.0000 -> 0.9750
-      2 | Decay     |   0.9506 |    -   | Natural decay: 0.9750 -> 0.9506
-      3 | PURIFY    |   0.9612 |  0.85  | Trigger Purify -> 0.9612
-   ```
+  ```
+  >>> [Execution 2] Outputting Detailed Step-by-Step Logs
+  
+  ===============================================================================================
+                            QUANTUM PURIFICATION DECISION LOG
+  ===============================================================================================
+  Node | Operation | Fidelity | P_succ | Action Detail
+  ------+-----------+----------+--------+------------------------------------------------------
+    0 | Init      |   1.0000 |    -   | System Initialization (Start Node)
+    1 | Decay     |   0.9750 |    -   | Natural decay: 1.0000 -> 0.9750
+    2 | Decay     |   0.9506 |    -   | Natural decay: 0.9750 -> 0.9506
+    3 | Decay     |   0.9268 |    -   | Natural decay: 0.9506 -> 0.9268
+    4 | Decay     |   0.9034 |    -   | Natural decay: 0.9268 -> 0.9034
+    5 | Decay     |   0.8805 |    -   | Natural decay: 0.9034 -> 0.8805
+    6 | PURIFY    |   0.9045 |  0.78  | Natural decay: 0.8805 -> 0.7798 | Trigger Purify -> 0.9045
+  ...
+    20 | Decay     |   0.5423 |    -   | Natural decay (Target Node) | [SKIP] Target node reached
+  ==============================================================================================
+  Final Fidelity at Node 20: 0.5423
+  Total Success Probability (Yield): 62.35%
+  ==============================================================================================
+  ```
 
-3. **保真度曲線圖**：展示基準衰減 vs. 優化後的保真度，並標記純化觸發點
+**保真度曲線圖**：展示基準衰減 vs. 優化後的保真度曲線，並標記純化觸發點
 
 ## 技術來源與致謝
 
