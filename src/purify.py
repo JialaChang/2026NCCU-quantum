@@ -4,6 +4,8 @@ import re
 
 # 定義 4 維 Hilbert 空間的均勻機率下限 (完全混合態保真度)
 MAXIMALLY_MIXED_FIDELITY = 0.25
+# 測試後最佳的閥值
+BEST_THRESHOLD = 0.78
 
 # =====================================================================
 # 核心引擎 (共用計算邏輯)
@@ -22,7 +24,7 @@ def _simulate_core(L, p, threshold, purify_gate_count=3):
         - f_baseline: 基準衰減陣列
         - f_optimized: 優化後的保真度陣列
         - events: 包含觸發節點、純化前後保真度及決策原因的字典陣列
-        - total_success_prob: 抵達終點的總成功率 (存活率)
+        - total_success_prob: 抵達終點的總成功率
     """
     # 輔助位元保真度 (假設來自相鄰節點，距離為 1)
     f_ancilla = MAXIMALLY_MIXED_FIDELITY + (1.0 - MAXIMALLY_MIXED_FIDELITY) * (1 - p)**1
@@ -88,7 +90,7 @@ def _simulate_core(L, p, threshold, purify_gate_count=3):
 # =====================================================================
 # 功能 1：獲取指令序列與 C++ 語法解析
 # =====================================================================
-def get_purification_sequence(L=100, p=0.05, threshold=0.81):
+def get_purification_sequence(L=100, p=0.05, threshold=BEST_THRESHOLD):
     """
     計算需要純化的節點，並回傳格式化的高階指令字串。
     回傳格式: list of tuple (node_index, command_string)
@@ -143,7 +145,7 @@ def parse_to_cpp_instructions(command_string, L):
 # =====================================================================
 # 功能 2：輸出詳細決策日誌 
 # =====================================================================
-def print_simulation_logs(L=20, p=0.05, threshold=0.81):
+def print_simulation_logs(L=20, p=0.05, threshold=BEST_THRESHOLD):
     """
     印出執行時的詳細決策步驟
     """
@@ -177,7 +179,7 @@ def print_simulation_logs(L=20, p=0.05, threshold=0.81):
 # =====================================================================
 # 功能 3：可視化保真度震盪圖表
 # =====================================================================
-def plot_fidelity_graph(L=100, p=0.05, threshold=0.81):
+def plot_fidelity_graph(L=100, p=0.05, threshold=BEST_THRESHOLD):
     """
     繪製保真度的變化曲線，圖例設定於左下角
     """
