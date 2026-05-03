@@ -1,81 +1,177 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import re
+
+# 定義 4 維 Hilbert 空間的均勻機率下限 (完全混合態保真度)
+MAXIMALLY_MIXED_FIDELITY = 0.25
 
 # =====================================================================
-# 功能 1：核心邏輯與回傳格式化指令
+# 核心引擎 (共用計算邏輯)
+# =====================================================================
+def _simulate_core(L, p, threshold, purify_gate_count=3):
+    """
+    執行量子純化模擬的核心計算引擎。
+    
+    參數：
+        L: 網路總長度 (Node 0 到 L)
+        p: 物理錯誤率
+        threshold: 觸發純化的保真度閥值
+        purify_gate_count: 執行一次純化所需的額外雜訊閘數量 (預設為 3)
+        
+    回傳：
+        - f_baseline: 基準衰減陣列
+        - f_optimized: 優化後的保真度陣列
+        - events: 包含觸發節點、純化前後保真度及決策原因的字典陣列
+        - total_success_prob: 抵達終點的總成功率 (存活率)
+    """
+    # 輔助位元保真度 (假設來自相鄰節點，距離為 1)
+    f_ancilla = MAXIMALLY_MIXED_FIDELITY + (1.0 - MAXIMALLY_MIXED_FIDELITY) * (1 - p)**1
+    
+    # 1. 計算基準線 (僅自然衰減)
+    f_baseline = np.zeros(L + 1)
+    f_b = 1.0
+    f_baseline[0] = f_b
+    for x in range(1, L + 1):
+        f_b = MAXIMALLY_MIXED_FIDELITY + (f_b - MAXIMALLY_MIXED_FIDELITY) * (1 - p)
+        f_baseline[x] = f_b
+
+    # 2. 計算動態優化路徑
+    f_optimized = np.zeros(L + 1)
+    f_opt = 1.0
+    f_optimized[0] = f_opt
+    events = []
+    
+    # 初始化總成功率為 100%
+    total_success_prob = 1.0 
+    
+    for x in range(1, L + 1):
+        f_old = f_opt 
+        # 進行一步自然衰減
+        f_opt = MAXIMALLY_MIXED_FIDELITY + (f_opt - MAXIMALLY_MIXED_FIDELITY) * (1 - p)
+        f_decayed = f_opt 
+        
+        event_info = {
+            'node': x,
+            'f_old': f_old,
+            'f_decayed': f_decayed,
+            'triggered': False,
+            'reason': '',
+            'p_succ': 1.0 
+        }
+        
+        # 條件判斷：低於閥值才考慮純化
+        if f_opt < threshold:
+            if x == L:
+                event_info['reason'] = '[SKIP] Target node reached (No purify)'
+            else:
+                # 計算純化成功率與躍升後的保真度
+                p_succ = f_opt * f_ancilla + (1 - f_opt) * (1 - f_ancilla)
+                f_jump = (f_opt * f_ancilla / p_succ) * ((1 - p)**purify_gate_count)
+                
+                # 確保純化後保真度有實質提升
+                if f_jump > f_opt:
+                    event_info['triggered'] = True
+                    event_info['f_jumped'] = f_jump
+                    event_info['p_succ'] = p_succ 
+                    
+                    f_opt = f_jump 
+                    total_success_prob *= p_succ 
+                else:
+                    event_info['reason'] = '[SKIP] Gain insufficient to overcome gate noise'
+                    
+        events.append(event_info)
+        f_optimized[x] = f_opt
+
+    return f_baseline, f_optimized, events, total_success_prob
+
+
+# =====================================================================
+# 功能 1：獲取指令序列與 C++ 語法解析
 # =====================================================================
 def get_purification_sequence(L=100, p=0.05, threshold=0.81):
     """
-    計算需要純化的節點，並回傳格式化字串。
-    x=0 為初始化起點 (不進入衰減迴圈)。嚴格排除最後一個節點 (x=L) 進行純化。
+    計算需要純化的節點，並回傳格式化的高階指令字串。
     回傳格式: list of tuple (node_index, command_string)
     """
-    f_opt = 1.0
-    f_ancilla = 0.25 + 0.75 * (1 - p)**1
+    _, _, events, _ = _simulate_core(L, p, threshold)
     commands = []
     
-    for x in range(1, L + 1):
-        # 進行一步自然衰減 (代表從 x-1 傳輸到了 x)
-        f_opt = 0.25 + (f_opt - 0.25) * (1 - p)
-        
-        # 條件：低於門檻，且不為終點(L)
-        if f_opt < threshold and x < L:
-            p_succ = f_opt * f_ancilla + (1 - f_opt) * (1 - f_ancilla)
-            f_jump = (f_opt * f_ancilla / p_succ) * ((1 - p)**3)
+    for event in events:
+        if event['triggered']:
+            x = event['node']
+            cmd_str = f"{{M,{x-1},{x}}},{{M,{x},{x+1}}},{{P,{x+1},{x+2}}}"
+            commands.append((x, cmd_str))
             
-            # 確保純化後保真度有提升才執行
-            if f_jump > f_opt:
-                f_opt = f_jump
-                
-                # 動態產生相對應的指令字串
-                cmd_str = f"{{M,{x-1},{x}}},{{M,{x},{x+1}}},{{P,{x+1},{x+2}}}"
-                commands.append((x, cmd_str))
-                
     return commands
+
+def parse_to_cpp_instructions(command_string, L):
+    """
+    將高階純化指令解析為 C++ 量子電路語法。
+    例如將 {M,0,1} 轉換為對應的 CNOT/SWAP 與條件判斷邏輯。
+    """
+    pattern = r'\{([A-Z]+),(\d+),(\d+)\}'
+    matches = re.findall(pattern, command_string)
+    
+    parsed_instructions = []
+    
+    for match in matches:
+        gate_type = match[0]
+        a = int(match[1])
+        b = int(match[2])
+        
+        if gate_type == 'M':
+            if a == 0 and b == 1:
+                total_qubits = 2 * L
+                parsed_instructions.append(f"{total_qubits},{{Label,start}},{{H,0}},{{CNOT,0,1}}")
+            else:
+                parsed_instructions.append(f"{{SWAP,{a},{b}}}")
+                
+        elif gate_type == 'P':
+            p_logic = (
+                f"{{CNOT,{a},{a+L}}},"
+                f"{{SWAP,{a+L},{a+L+1}}},"
+                f"{{CNOT,{b},{a+L+1}}},"
+                f"{{If,{{M,{a+L+1},1}},{{Reset}},{{Goto,start}}}},"
+                f"{{INIT,{a+L},0}},"
+                f"{{INIT,{a+L+1},0}}"
+            )
+            parsed_instructions.append(p_logic)
+            
+    return ",".join(parsed_instructions)
 
 
 # =====================================================================
-# 功能 2：輸出詳細決策日誌
+# 功能 2：輸出詳細決策日誌 
 # =====================================================================
 def print_simulation_logs(L=20, p=0.05, threshold=0.81):
     """
-    印出執行時的詳細決策步驟。
-    輸出保持英文格式以方便系統串接對齊。
+    印出執行時的詳細決策步驟
     """
-    f_opt = 1.0
-    f_ancilla = 0.25 + 0.75 * (1 - p)**1
+    _, f_optimized, events, total_prob = _simulate_core(L, p, threshold)
     
-    print(f"\n{'='*80}")
-    print(f"{'QUANTUM PURIFICATION DECISION LOG':^80}")
-    print(f"{'='*80}")
-    print(f"{'Node':<6} | {'Operation':<10} | {'Fidelity':<10} | {'Action Detail'}")
-    print(f"{'-'*80}")
-    print(f"{0:<6} | {'Init':<10} | {f_opt:<10.4f} | System Initialization (Start Node)")
+    print(f"\n{'='*95}")
+    print(f"{'QUANTUM PURIFICATION DECISION LOG':^95}")
+    print(f"{'='*95}")
+    print(f"{'Node':<6} | {'Operation':<10} | {'Fidelity':<10} | {'P_succ':<8} | {'Action Detail'}")
+    print(f"{'-'*95}")
+    print(f"{0:<6} | {'Init':<10} | {1.0:<10.4f} | {'-':<8} | System Initialization (Start Node)")
 
-    for x in range(1, L + 1):
-        f_old = f_opt
-        f_opt = 0.25 + (f_opt - 0.25) * (1 - p)
-        op_type = "Decay"
-        detail = f"Natural decay: {f_old:.4f} -> {f_opt:.4f}"
+    for ev in events:
+        x = ev['node']
+        f_decayed = ev['f_decayed']
+        detail = f"Natural decay: {ev['f_old']:.4f} -> {f_decayed:.4f}"
         
-        if f_opt < threshold:
-            if x == L:
-                detail += " | [SKIP] Target node reached (No purify)"
-            else:
-                p_succ = f_opt * f_ancilla + (1 - f_opt) * (1 - f_ancilla)
-                f_jump = (f_opt * f_ancilla / p_succ) * ((1 - p)**3)
-                
-                if f_jump > f_opt:
-                    f_before = f_opt
-                    f_opt = f_jump
-                    op_type = "PURIFY"
-                    cmd_str = f"{{M,{x-1},{x}}},{{M,{x},{x+1}}},{{P,{x+1},{x+2}}}"
-                    detail = f"Trigger Purify -> {f_opt:.4f} (Return: {cmd_str})"
-                else:
-                    detail += " | [SKIP] Gain insufficient to overcome gate noise"
+        if ev['triggered']:
+            p_succ_str = f"{ev['p_succ']:.4f}"
+            print(f"{x:<6} | {'PURIFY':<10} | {ev['f_jumped']:<10.4f} | {p_succ_str:<8} | {detail} | Trigger Purify -> {ev['f_jumped']:.4f}")
+        else:
+            reason = f" | {ev['reason']}" if ev['reason'] else ""
+            print(f"{x:<6} | {'Decay':<10} | {f_decayed:<10.4f} | {'-':<8} | {detail}{reason}")
 
-        print(f"{x:<6} | {op_type:<10} | {f_opt:<10.4f} | {detail}")
-    print(f"{'='*80}\n")
+    print(f"{'-'*95}")
+    print(f"Final Fidelity at Node {L}: {f_optimized[-1]:.4f}")
+    print(f"Total Success Probability (Yield): {total_prob * 100:.2f}%")
+    print(f"{'='*95}\n")
 
 
 # =====================================================================
@@ -83,60 +179,31 @@ def print_simulation_logs(L=20, p=0.05, threshold=0.81):
 # =====================================================================
 def plot_fidelity_graph(L=100, p=0.05, threshold=0.81):
     """
-    繪製保真度的變化曲線。
-    圖例 (Legend) 設定於左下角，標題與圖例維持英文。
-    起始保護線移至 x=0。
+    繪製保真度的變化曲線，圖例設定於左下角
     """
+    f_baseline, f_optimized, events, total_prob = _simulate_core(L, p, threshold)
+    
     nodes = np.arange(L + 1)
-    f_baseline = np.zeros(L + 1)
-    f_optimized = np.zeros(L + 1)
-    purify_events = []
-    
-    f_ancilla = 0.25 + 0.75 * (1 - p)**1
-    
-    # 1. 計算基準線 (僅衰減)
-    f_b = 1.0
-    f_baseline[0] = f_b
-    for x in range(1, L + 1):
-        f_b = 0.25 + (f_b - 0.25) * (1 - p)
-        f_baseline[x] = f_b
+    purify_nodes = [e['node'] for e in events if e['triggered']]
+    purify_fidelities = [f_optimized[n] for n in purify_nodes]
 
-    # 2. 計算動態優化路徑
-    f_opt = 1.0
-    f_optimized[0] = f_opt
-    
-    for x in range(1, L + 1):
-        f_opt = 0.25 + (f_opt - 0.25) * (1 - p)
-        
-        # 條件：低於門檻，且不為終點(L)
-        if f_opt < threshold and x < L:
-            p_succ = f_opt * f_ancilla + (1 - f_opt) * (1 - f_ancilla)
-            f_jump = (f_opt * f_ancilla / p_succ) * ((1 - p)**3)
-            if f_jump > f_opt:
-                f_opt = f_jump
-                purify_events.append(x)
-                
-        f_optimized[x] = f_opt
-
-    # 3. 繪製圖表
     plt.figure(figsize=(12, 6))
     plt.plot(nodes, f_baseline, color='gray', linestyle='--', alpha=0.6, label='Baseline (Decay Only)')
     plt.plot(nodes, f_optimized, color='#1f77b4', linewidth=2, label='Optimized (With Purification)')
-    plt.scatter(purify_events, [f_optimized[i] for i in purify_events], 
-                color='#2ca02c', s=35, label='Purification Triggers', zorder=5)
+    plt.scatter(purify_nodes, purify_fidelities, 
+                color='#2ca02c', s=35, label=f'Purification Triggers ({len(purify_nodes)} times)', zorder=5)
     
-    # 標註受保護的節點區間 (頭尾)
     plt.axvline(x=L, color='red', linestyle=':', alpha=0.5, label='Target Node (No Purify)')
     plt.axvline(x=0, color='orange', linestyle=':', alpha=0.5, label='Start Node (No Purify)')
 
-    # 圖表文字標註 (英文)
-    plt.title(f'Quantum Fidelity Oscillation (L={L}, p={p})', fontsize=14)
+    title_str = (f'Quantum Fidelity Oscillation (L={L}, p={p}, th={threshold})\n'
+                 f'Final Fidelity: {f_optimized[-1]:.4f}  |  Total Success Rate: {total_prob*100:.2f}%')
+    plt.title(title_str, fontsize=14)
     plt.xlabel('Node Index')
     plt.ylabel('Fidelity')
     plt.ylim(0, 1.05)
     plt.grid(True, linestyle=':', alpha=0.5)
     
-    # 圖例設定至左下角
     plt.legend(loc='lower left')
     plt.tight_layout()
     plt.show()
@@ -146,20 +213,22 @@ def plot_fidelity_graph(L=100, p=0.05, threshold=0.81):
 # 主程式執行區塊
 # =====================================================================
 if __name__ == "__main__":
-    TOTAL_LENGTH = 25
+    TOTAL_LENGTH = 20
     ERROR_RATE = 0.05
-    THRESHOLD = 0.81
+    THRESHOLD = 0.78
 
-    # 功能 1
-    print(">>> [Execution 1] Fetching Purification Command Array")
+    print(">>> [Execution 1] Fetching Purification Command Array & C++ Parsing")
     commands_array = get_purification_sequence(L=TOTAL_LENGTH, p=ERROR_RATE, threshold=THRESHOLD)
+    
     for step, cmd in commands_array:
-        print(f"Node {step:02d} -> {cmd}")
+        print(f"\n[Node {step:02d} Triggered]")
+        print(f"High-Level Cmd : {cmd}")
+        # 示範呼叫 C++ 語法解析器
+        cpp_str = parse_to_cpp_instructions(cmd, L=TOTAL_LENGTH)
+        print(f"C++ Parsed Str : {cpp_str}")
         
-    # 功能 2
     print("\n>>> [Execution 2] Outputting Detailed Step-by-Step Logs")
     print_simulation_logs(L=TOTAL_LENGTH, p=ERROR_RATE, threshold=THRESHOLD)
     
-    # 功能 3
     print(">>> [Execution 3] Rendering Plot")
-    plot_fidelity_graph(L=100, p=ERROR_RATE, threshold=THRESHOLD)
+    plot_fidelity_graph(L=TOTAL_LENGTH, p=ERROR_RATE, threshold=THRESHOLD)
