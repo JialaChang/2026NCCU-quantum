@@ -151,11 +151,11 @@ def print_simulation_logs(L=20, p=0.05, threshold=BEST_THRESHOLD):
     """
     _, f_optimized, events, total_prob = _simulate_core(L, p, threshold)
     
-    print(f"\n{'='*95}")
+    print(f"{'='*100}")
     print(f"{'QUANTUM PURIFICATION DECISION LOG':^95}")
-    print(f"{'='*95}")
+    print(f"{'='*100}")
     print(f"{'Node':<6} | {'Operation':<10} | {'Fidelity':<10} | {'P_succ':<8} | {'Action Detail'}")
-    print(f"{'-'*95}")
+    print(f"{'-'*100}")
     print(f"{0:<6} | {'Init':<10} | {1.0:<10.4f} | {'-':<8} | System Initialization (Start Node)")
 
     for ev in events:
@@ -170,10 +170,10 @@ def print_simulation_logs(L=20, p=0.05, threshold=BEST_THRESHOLD):
             reason = f" | {ev['reason']}" if ev['reason'] else ""
             print(f"{x:<6} | {'Decay':<10} | {f_decayed:<10.4f} | {'-':<8} | {detail}{reason}")
 
-    print(f"{'-'*95}")
+    print(f"{'-'*100}")
     print(f"Final Fidelity at Node {L}: {f_optimized[-1]:.4f}")
-    print(f"Total Success Probability (Yield): {total_prob * 100:.2f}%")
-    print(f"{'='*95}\n")
+    print(f"Total Success Probability (Yield): {total_prob * 100:.4f}%")
+    print(f"{'='*100}\n")
 
 
 # =====================================================================
@@ -199,7 +199,7 @@ def plot_fidelity_graph(L=100, p=0.05, threshold=BEST_THRESHOLD):
     plt.axvline(x=0, color='orange', linestyle=':', alpha=0.5, label='Start Node (No Purify)')
 
     title_str = (f'Quantum Fidelity Oscillation (L={L}, p={p}, th={threshold})\n'
-                 f'Final Fidelity: {f_optimized[-1]:.4f}  |  Total Success Rate: {total_prob*100:.2f}%')
+                 f'Final Fidelity: {f_optimized[-1]:.4f}  |  Total Success Rate: {total_prob*100:.4f}%')
     plt.title(title_str, fontsize=14)
     plt.xlabel('Node Index')
     plt.ylabel('Fidelity')
@@ -210,27 +210,58 @@ def plot_fidelity_graph(L=100, p=0.05, threshold=BEST_THRESHOLD):
     plt.tight_layout()
     plt.show()
 
+# =====================================================================
+# 參數輸入輔助函式
+# =====================================================================
+def get_user_parameters():
+    """
+    提示使用者輸入網路長度、錯誤率與純化閥值。
+    """
+    print(f"{'='*100}")
+    print(f"{'QUANTUM PURIFICATION SIMULATOR SETUP':^50}")
+    print(f"{'='*100}")
+    
+    try:
+        l_in = input(f"{'Enter Network Length (L) [Default: 20]':<45}: ")
+        total_length = int(l_in) if l_in.strip() else 20
+    except ValueError:
+        total_length = 20
+
+    try:
+        p_in = input(f"{'Enter Error Rate (p) [Default: 0.05]':<45}: ")
+        error_rate = float(p_in) if p_in.strip() else 0.05
+    except ValueError:
+        error_rate = 0.05
+
+    try:
+        th_in = input(f"{'Enter Threshold [Default: 0.78]':<45}: ")
+        threshold = float(th_in) if th_in.strip() else BEST_THRESHOLD
+    except ValueError:
+        threshold = BEST_THRESHOLD
+
+    print(f"{'='*100}\n")
+    return total_length, error_rate, threshold
 
 # =====================================================================
 # 主程式執行區塊
 # =====================================================================
 if __name__ == "__main__":
-    TOTAL_LENGTH = 20
-    ERROR_RATE = 0.05
-    THRESHOLD = 0.78
-
-    print(">>> [Execution 1] Fetching Purification Command Array & C++ Parsing")
-    commands_array = get_purification_sequence(L=TOTAL_LENGTH, p=ERROR_RATE, threshold=THRESHOLD)
     
-    for step, cmd in commands_array:
-        print(f"\n[Node {step:02d} Triggered]")
-        print(f"High-Level Cmd : {cmd}")
-        # 示範呼叫 C++ 語法解析器
-        cpp_str = parse_to_cpp_instructions(cmd, L=TOTAL_LENGTH)
-        print(f"C++ Parsed Str : {cpp_str}")
+    # 獲取使用者輸入
+    TOTAL_LENGTH, ERROR_RATE, THRESHOLD = get_user_parameters()
+
+    # print(">>> [Execution 1] Fetching Purification Command Array & C++ Parsing")
+    # commands_array = get_purification_sequence(L=TOTAL_LENGTH, p=ERROR_RATE, threshold=THRESHOLD)
+    
+    # for step, cmd in commands_array:
+    #     print(f"\n[Node {step:02d} Triggered]")
+    #     print(f"High-Level Cmd : {cmd}")
+    #     # 示範呼叫 C++ 語法解析器
+    #     cpp_str = parse_to_cpp_instructions(cmd, L=TOTAL_LENGTH)
+    #     print(f"C++ Parsed Str : {cpp_str}")
         
-    print("\n>>> [Execution 2] Outputting Detailed Step-by-Step Logs")
+    print(">>> [Execution 2] Outputting Detailed Step-by-Step Logs\n")
     print_simulation_logs(L=TOTAL_LENGTH, p=ERROR_RATE, threshold=THRESHOLD)
     
-    print(">>> [Execution 3] Rendering Plot")
+    print(">>> [Execution 3] Rendering Plot\n")
     plot_fidelity_graph(L=TOTAL_LENGTH, p=ERROR_RATE, threshold=THRESHOLD)

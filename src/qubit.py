@@ -130,21 +130,19 @@ def to_cpp_expression(num_qubits, path, target_bell='Phi+', error_rate=0.05, thr
     if target_bell in ['Psi+', 'Psi-']:
         instr.append(f"{{X,{path[1]}}}")
         
-    # 判斷目標貝爾態的正確宇稱：Phi 家族(00, 11)為 0，Psi 家族(01, 10)為 1
-    expected_parity = 0 if target_bell in ['Phi+', 'Phi-'] else 1
-    
     # 沿路徑傳遞量子態 (透過 SWAP 操作)
     for i in range(1, len(path) - 1):
         instr.append(f"{{SWAP,{path[i]},{path[i+1]}}}")
         
         # 動態插入純化 Parity 指令
         if events[i]['triggered']:
-            instr.append(f"{{Parity,{path[0]},{path[i+1]},{expected_parity}}}")
+            # [修改點] 只傳入要做測量的 qubits
+            instr.append(f"{{Parity,{path[0]},{path[i+1]}}}")
                 
     # 測量起點與終點位元
     instr.extend([f"{{M,{path[0]}}}", f"{{M,{path[-1]}}}"])
+    # print("[Debug] C++ command: \"" + ", ".join(instr) + "\"")
     return ", ".join(instr)
-
 
 def build_qiskit_circuit(num_qubit, path, target_bell='Phi+', error_rate=0.05, threshold=BEST_THRESHOLD):
     """
@@ -169,8 +167,8 @@ def build_qiskit_circuit(num_qubit, path, target_bell='Phi+', error_rate=0.05, t
     if target_bell in ['Psi+', 'Psi-']:
         qc.x(path[1])
         
-    # 畫出自定義的 Parity Check 區塊
-    parity_gate = Gate(name='Parity Check', num_qubits=2, params=[])
+    # 畫出自定義的 Purify 區塊
+    parity_gate = Gate(name='Purify', num_qubits=2, params=[])
     
     # 沿路徑進行 SWAP
     for i in range(1, len(path) - 1):
@@ -180,12 +178,6 @@ def build_qiskit_circuit(num_qubit, path, target_bell='Phi+', error_rate=0.05, t
         if events[i]['triggered']:
             qc.append(parity_gate, [path[0], path[i+1]])
     
-    # 如果整趟路徑有發生純化，在終點測量前蓋一個 [Purified] 的盒子
-    any_purified = any(e['triggered'] for e in events)
-    if any_purified:
-        purified_stamp = Gate(name='[Purified]', num_qubits=2, params=[])
-        qc.append(purified_stamp, [path[0], path[-1]])
-
     # 標準單點測量
     cr = ClassicalRegister(2, 'meas')
     qc.add_register(cr)
@@ -372,20 +364,20 @@ def run_simulation_flow():
     print("  [2] Phi- : (|00> - |11>) / sqrt(2)")
     print("  [3] Psi+ : (|01> + |10>) / sqrt(2)")
     print("  [4] Psi- : (|01> - |10>) / sqrt(2)")
-    bell_choice = input(f"{'Enter choice (1-4) [Default: 1]':<45}: ").strip()
+    bell_choice = input(f"\n{'Enter choice (1-4) [Default: 1]':<45}: ").strip()
     
     bell_map = {'1': 'Phi+', '2': 'Phi-', '3': 'Psi+', '4': 'Psi-'}
     target_bell = bell_map.get(bell_choice, 'Phi+')
-    print(f"\n[Info] Target Bell State set to: {target_bell}\n")
+    print(f"\n[Info] Target Bell State set to: {target_bell}")
 
     # 步驟 2：硬體參數與損壞節點設定
     try:
-        L_in = input(f"{'Enter Ladder Length (L) [Default: 5]':<45}: ")
+        L_in = input(f"\n{'Enter Ladder Length (L) [Default: 5]':<45}: ")
         L = int(L_in) if L_in.strip() else 5
     except ValueError:
         L = 5
         
-    broken_in = input(f"{'Enter Broken Nodes (e.g.: 2,10) [Default: None]':<45}: ")
+    broken_in = input(f"\n{'Enter Broken Nodes (e.g.: 2,10) [Default: None]':<45}: ")
     broken_nodes = []
     if broken_in.strip():
         try:
@@ -395,7 +387,7 @@ def run_simulation_flow():
 
     # 步驟 3：純化閥值輸入
     try:
-        th_in = input(f"{'Enter Purification Threshold [Default: 0.78]':<45}: ")
+        th_in = input(f"{'\nEnter Purification Threshold [Default: 0.78]':<45}: ")
         threshold = float(th_in) if th_in.strip() else BEST_THRESHOLD
     except ValueError:
         threshold = BEST_THRESHOLD
@@ -433,18 +425,21 @@ def run_simulation_flow():
     qc = build_qiskit_circuit(num_qubit, path, target_bell, error_rate=0.05, threshold=active_threshold)
     run_cpp_simulation(num_qubit, path, quantum_cpp, target_bell, threshold=active_threshold)
 
-    # 引入自 purify.py 的日誌輸出功能
+    # 引入自 purify.py 的日誌輸出功能與互動式詢問
     if is_straight_line and active_threshold > 0:
         L_path = len(path) - 1
         # 使用引入的 4 個 return 值
         _, _, events, _ = _simulate_core(L_path, 0.05, active_threshold)
         
-        # 如果有觸發事件，則調用引入的日誌函數
+        # 如果有觸發事件，則詢問使用者是否觀看日誌
         if any(e['triggered'] for e in events):
-            print_simulation_logs(L=L_path, p=0.05, threshold=active_threshold)
+            view_log = input(f"{'[Prompt] Purification triggered! View detailed logs? (y/n) [Default: n]':<65}: ").strip().lower()
+            print('')
+            if view_log == 'y':
+                print_simulation_logs(L=L_path, p=0.05, threshold=active_threshold)
     
     # 步驟 6：顯示結果儀表板
-    print("\n[Info] A pop-up window is rendering the dashboard. Close it to continue...")
+    print("[Info] A pop-up window is rendering the dashboard. Close it to continue...")
     show_simulation_dashboard(L, ladder_graph, path, broken_nodes, qc)
 
 
@@ -461,7 +456,7 @@ if __name__ == "__main__":
         choice = input("Select an option: ")
         
         if choice == '0':
-            print("\nExiting simulator. Goodbye!")
+            print("\nExiting simulator. Goodbye!\n")
             break
         elif choice == '1':
             run_simulation_flow()
