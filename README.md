@@ -1,12 +1,10 @@
 # Quantum Routing Simulator
 
 ## 專案簡介
-本專案為針對 2026 電物競賽 (Ephys Challenge 2026) 開發之量子電路模擬系統。
-
-主要功能為在雙腳梯子狀的特殊量子處理器 (QPU) 佈局中，設計並模擬量子電路，
-使相距甚遠之兩端點量子位元 (e0 及 e1) 產生量子糾纏，形成指定的貝爾態 (Bell State)。
-
-本系統結合 Python 前端與 C++ 運算後端，具備路徑規劃、自動避障與物理誤差模擬功能，
+本專案為針對 2026 電物競賽 (Ephys Challenge 2026) 開發之量子電路模擬系統。  
+主要功能為在雙腳梯子狀的特殊量子處理器 (QPU) 佈局中，設計並模擬量子電路，  
+使相距甚遠之兩端點量子位元 (e0 及 e1) 產生量子糾纏，形成指定的貝爾態 (Bell State)。  
+本系統結合 Python 前端與 C++ 運算後端，具備路徑規劃、自動避障與物理誤差模擬功能，  
 
 ## 核心特點
 * **混合架構設計**：Python 前端進行參數輸入、圖論運算與視覺化；C++ 後端進行高精度物理誤差模擬
@@ -123,29 +121,25 @@ pyinstaller --onefile --windowed src/qubit.py
 **輸出範例：**
 ```
 ----------------------------------------------------------------------------------------------------
-                           STEP-BY-STEP ERROR DIFFUSION TRACE
+                           INTEGRATED QUANTUM FIDELITY & PARITY ANALYSIS                            
 ----------------------------------------------------------------------------------------------------
-[Step 02] {CNOT,0,1}          | Depolarizing-Error occurred on Q[0]!
-
-----------------------------------------------------------------------------------------------------
-                      INTEGRATED QUANTUM FIDELITY & PARITY ANALYSIS
-----------------------------------------------------------------------------------------------------
-Target State         : Phi+ (Expected Parity: Even(0))
+Target State         : Psi+ (Expected Parity: Odd(1))
 Hardware Error Rate  : 5.0% per multi-qubit gate
-Total Physical Errors: 1 hits during this run
+Total Physical Errors: 0 hits during this run
 ----------------------------------------------------------------------------------------------------
 Pre-Measurement Error Probability (Before Collapse):
-  > Q[0] accumulated error: 3.47%
-  > Q[1] accumulated error: 3.47%
+  > Q[0 ] accumulated error: 22.62%
+  > Q[5 ] accumulated error: 22.62%
 
 Measurement Distribution (1000 Shots):
-  > |00> : 47.3%
-  > |01> : 2.5%
-  > |11> : 47.8%
-  > |10> : 2.4%
+  > |00> : 4.8%
+  > |01> : 46.9%
+  > |10> : 43.1%
+  > |11> : 5.2%
 
-[Result] Parity Conservation Rate : 95.1%
+[Result] Parity Conservation Rate : 90.0%
 ----------------------------------------------------------------------------------------------------
+
 ```
 
 ### 範例 2：保真度優化模擬 (purify.py)
@@ -153,28 +147,23 @@ Measurement Distribution (1000 Shots):
 
 **輸出內容：**
 
-  ```
-  >>> [Execution 2] Outputting Detailed Step-by-Step Logs
-  
-  ===============================================================================================
-                            QUANTUM PURIFICATION DECISION LOG
-  ===============================================================================================
-  Node | Operation | Fidelity | P_succ | Action Detail
-  ------+-----------+----------+--------+------------------------------------------------------
-    0 | Init      |   1.0000 |    -   | System Initialization (Start Node)
-    1 | Decay     |   0.9750 |    -   | Natural decay: 1.0000 -> 0.9750
-    2 | Decay     |   0.9506 |    -   | Natural decay: 0.9750 -> 0.9506
-    3 | Decay     |   0.9268 |    -   | Natural decay: 0.9506 -> 0.9268
-    4 | Decay     |   0.9034 |    -   | Natural decay: 0.9268 -> 0.9034
-    5 | Decay     |   0.8805 |    -   | Natural decay: 0.9034 -> 0.8805
-    6 | PURIFY    |   0.9045 |  0.78  | Natural decay: 0.8805 -> 0.7798 | Trigger Purify -> 0.9045
-  ...
-    20 | Decay     |   0.5423 |    -   | Natural decay (Target Node) | [SKIP] Target node reached
-  ==============================================================================================
-  Final Fidelity at Node 20: 0.5423
-  Total Success Probability (Yield): 62.35%
-  ==============================================================================================
-  ```
+```
+===============================================================================================
+                              QUANTUM PURIFICATION DECISION LOG                               
+===============================================================================================
+Node   | Operation  | Fidelity   | P_succ   | Action Detail
+-----------------------------------------------------------------------------------------------
+0      | Init       | 1.0000     | -        | System Initialization (Start Node)
+1      | Decay      | 0.9625     | -        | Natural decay: 1.0000 -> 0.9625
+2      | Decay      | 0.9269     | -        | Natural decay: 0.9625 -> 0.9269
+⁝
+19     | PURIFY     | 0.8471     | 0.7423   | Natural decay: 0.7888 -> 0.7619 | Trigger Purify -> 0.8471
+20     | Decay      | 0.8172     | -        | Natural decay: 0.8471 -> 0.8172
+-----------------------------------------------------------------------------------------------
+Final Fidelity at Node 20: 0.8172
+Total Success Probability (Yield): 22.88%
+===============================================================================================
+```
 
 **保真度曲線圖**：展示基準衰減 vs. 優化後的保真度曲線，並標記純化觸發點
 
