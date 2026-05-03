@@ -102,7 +102,7 @@ python src/purify.py
 若需自行打包成 exe：
 ```bash
 pip install pyinstaller
-pyinstaller --onefile --windowed src/qubit.py
+pyinstaller --onefile --console --name "QuantumSimulator" --collect-data qiskit src/qubit.py
 ```
 
 將 `src/` 中的 `quantum_cpp.pyd` 及 `.dll` 檔案複製到 `dist/` 資料夾

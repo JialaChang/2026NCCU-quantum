@@ -175,8 +175,8 @@ def build_qiskit_circuit(num_qubit, path, target_bell='Phi+', error_rate=0.05, t
         qc.swap(path[i], path[i+1])
         
         # 如果有進行純化才畫出盒子
-        if events[i]['triggered']:
-            qc.append(parity_gate, [path[0], path[i+1]])
+        # if events[i]['triggered']:
+        #     qc.append(parity_gate, [path[0], path[i+1]])
     
     # 標準單點測量
     cr = ClassicalRegister(2, 'meas')
@@ -310,7 +310,7 @@ def show_simulation_dashboard(L, graph, path, broken_nodes, qc):
     利用 Matplotlib 建立雙視窗儀表板\n
     左側顯示硬體拓樸與路由路徑；右側顯示生成的量子電路圖\n
     """
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), gridspec_kw={'height_ratios': [1, 3]}, constrained_layout=True)
     
     G = nx.Graph()
     for node, neighbors in graph.items():
@@ -337,18 +337,18 @@ def show_simulation_dashboard(L, graph, path, broken_nodes, qc):
     widths = [3 if c == 'blue' else 1 for c in edge_colors]
 
     nx.draw(G, pos, ax=ax1, with_labels=True, node_color=node_colors, 
-            edge_color=edge_colors, width=widths, node_size=800, font_weight='bold')
+            edge_color=edge_colors, width=widths, node_size=500, font_weight='bold')
     ax1.set_title(f"Network Topology (L={L}) | Broken: {broken_nodes}")
 
     # 若成功找到路徑，則繪製對應的量子電路圖
     if len(path) > 0:
-        qc.draw('mpl', ax=ax2)
+        qc.draw('mpl', ax=ax2, fold=-1, idle_wires=False)
         ax2.set_title("Generated Quantum Circuit")
     else:
         ax2.text(0.5, 0.5, 'No Path Available', horizontalalignment='center', verticalalignment='center', fontsize=20)
         ax2.axis('off')
 
-    plt.tight_layout()
+    plt.subplots_adjust(hspace=0.5)
     plt.show(block=True)
 
 
