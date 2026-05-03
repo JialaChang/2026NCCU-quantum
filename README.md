@@ -1,3 +1,6 @@
+![Python Version](https://img.shields.io/badge/python-3.13%2B-blue)
+![Managed by uv](https://img.shields.io/badge/managed%20by-uv-purple)  
+
 # Quantum Routing Simulator
 
 ## 專案簡介
