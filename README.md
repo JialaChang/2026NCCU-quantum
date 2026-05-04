@@ -10,18 +10,17 @@
 本系統結合 Python 前端與 C++ 運算後端，具備路徑規劃、自動避障與物理誤差模擬功能，  
 
 ## 核心特點
-* **混合架構設計**：Python 前端進行參數輸入、圖論運算與視覺化；C++ 後端進行高精度物理誤差模擬
+* **混合架構設計**：Python 前端進行參數輸入、圖論運算與視覺化；C++ 後端進行量子電路模擬
 * **容錯路由機制**：BFS 演算法規劃最短路由，動態繞過損壞節點
 * **貝爾態支援**：支援四種標準貝爾態 $|\Phi^+\rangle, |\Phi^-\rangle, |\Psi^+\rangle, |\Psi^-\rangle$
-* **保真度優化**：動態純化機制，在路徑傳遞過程中主動提升糾纏態保真度
 * **可視化分析**：整合 NetworkX 與 Qiskit，展示硬體拓樸與量子電路
 
 ## 模組說明
 **qubit.py** - 主程式，負責路由規劃、電路生成與 C++ 模擬執行控制
 
-**purify.py** - 保真度優化模組，計算保真度演化與純化決策
-
-**核心演算法**：保真度按 $f_x = 0.25 + (f_{x-1} - 0.25)(1-p)$ 自然衰減，當 $f_x < \text{threshold}$ 時觸發純化
+**qubit_set.py** - 量子電路生成模組，根據梯形拓樸長度自動產生最佳接線邏輯
+- L < 5：快速模式，使用 H + CNOT 建立貝爾態後逐級 SWAP 傳遞
+- L ≥ 5：多步驟模式，上下排對稱操作，8 個步驟完成端點糾纏
 
 ## 目錄結構
 ```text
@@ -86,10 +85,7 @@ uv run python src/qubit.py
 python src/qubit.py
 ```
 
-**保真度優化模擬：**
-```bash
-python src/purify.py
-```
+
 
 ### 獨立執行檔版本
 
@@ -112,27 +108,21 @@ pyinstaller --onefile --console --name "QuantumSimulator" --collect-data qiskit 
 
 ## 使用示例
 
-### 範例 1：基本路由模擬 (qubit.py)
+### 基本路由模擬 (qubit.py)
 執行主程式後，系統將提示輸入以下參數：
 ```
 1. 選擇目標貝爾態 (1=Phi+, 2=Phi-, 3=Psi+, 4=Psi-)
 2. 輸入梯子長度 L (預設 5)
 3. 輸入損壞節點清單 (逗號分隔，可留空)
-4. 輸入純化閥值 (預設 0.78)
 ```
 
 **輸出範例：**
 ```
 ----------------------------------------------------------------------------------------------------
-                           INTEGRATED QUANTUM FIDELITY & PARITY ANALYSIS                            
+                           QUANTUM PARITY ANALYSIS                            
 ----------------------------------------------------------------------------------------------------
 Target State         : Psi+ (Expected Parity: Odd(1))
-Hardware Error Rate  : 5.0% per multi-qubit gate
-Total Physical Errors: 0 hits during this run
 ----------------------------------------------------------------------------------------------------
-Pre-Measurement Error Probability (Before Collapse):
-  > Q[0 ] accumulated error: 22.62%
-  > Q[5 ] accumulated error: 22.62%
 
 Measurement Distribution (1000 Shots):
   > |00> : 4.8%
@@ -142,33 +132,7 @@ Measurement Distribution (1000 Shots):
 
 [Result] Parity Conservation Rate : 90.0%
 ----------------------------------------------------------------------------------------------------
-
 ```
-
-### 範例 2：保真度優化模擬 (purify.py)
-直接執行 `python src/purify.py` 將演示量子糾纏態的純化優化過程。
-
-**輸出內容：**
-
-```
-===============================================================================================
-                              QUANTUM PURIFICATION DECISION LOG                               
-===============================================================================================
-Node   | Operation  | Fidelity   | P_succ   | Action Detail
------------------------------------------------------------------------------------------------
-0      | Init       | 1.0000     | -        | System Initialization (Start Node)
-1      | Decay      | 0.9625     | -        | Natural decay: 1.0000 -> 0.9625
-2      | Decay      | 0.9269     | -        | Natural decay: 0.9625 -> 0.9269
-⁝
-19     | PURIFY     | 0.8471     | 0.7423   | Natural decay: 0.7888 -> 0.7619 | Trigger Purify -> 0.8471
-20     | Decay      | 0.8172     | -        | Natural decay: 0.8471 -> 0.8172
------------------------------------------------------------------------------------------------
-Final Fidelity at Node 20: 0.8172
-Total Success Probability (Yield): 22.88%
-===============================================================================================
-```
-
-**保真度曲線圖**：展示基準衰減 vs. 優化後的保真度曲線，並標記純化觸發點
 
 ## 技術來源與致謝
 
