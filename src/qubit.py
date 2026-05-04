@@ -348,7 +348,6 @@ def show_simulation_dashboard(L, graph, path, broken_nodes, qc):
         ax2.text(0.5, 0.5, 'No Path Available', horizontalalignment='center', verticalalignment='center', fontsize=20)
         ax2.axis('off')
 
-    plt.subplots_adjust(hspace=0.5)
     plt.show(block=True)
 
 
