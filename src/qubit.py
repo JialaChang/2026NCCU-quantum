@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 from qiskit import QuantumCircuit, ClassicalRegister
 from qiskit.circuit import Gate
 
-from purify import _simulate_core, print_simulation_logs, BEST_THRESHOLD
+import qubit_set
+import re
 
 # =========================================================
 # 環境設定與 C++ 量子模擬引擎載入
@@ -105,85 +106,35 @@ def find_best_path(graph, start, end, broken_nodes=None):
 # =========================================================
 # 量子電路生成與 C++ 模擬核心
 # =========================================================
-def to_cpp_expression(num_qubits, path, target_bell='Phi+', error_rate=0.05, threshold=BEST_THRESHOLD):
-    """
-    將路由路徑與目標貝爾態轉換為 C++ 模擬器之指令字串。
-    """
-    # 邊界保護：確保路徑至少有起點和終點
-    if not path or len(path) < 2:
-        return ""
-        
-    # 接收引入自 purify 的 4 個 return 值
-    L_path = len(path) - 1
-    _, _, events, _ = _simulate_core(L_path, error_rate, threshold)
+def to_cpp_expression(L, target_bell='Phi+'):
+    cpp_expr_raw, cpp_expr_raw_without = qubit_set.generate_quantum_circuit(L+1)
+    clean_expr = cpp_expr_raw_without.strip('"')
+    extra_instr = []
+    if target_bell in ['Phi-', 'Psi-']: extra_instr.append(f"{{Z,0}}")
+    if target_bell in ['Psi+', 'Psi-']: extra_instr.append(f"{{X,{L}}}")
+    extra_instr.extend([f"{{M,0}}", f"{{M,{L}}}"])
+    return clean_expr + "," + ",".join(extra_instr)
 
-    # 建立 C++ 量子電路字串格式        
-    instr = [f"{num_qubits}"]
+def build_qiskit_circuit(num_qubit, cpp_expr):
+    print(cpp_expr)
+    # 建立一個擁有 num_qubit 量子位元和 num_qubit 古典位元的電路 (單一匯流排畫圖乾淨)
+    qc = QuantumCircuit(num_qubit, num_qubit)
     
-    # 建立基本糾纏態 (Phi+)
-    instr.append(f"{{H,{path[0]}}}")
-    instr.append(f"{{CNOT,{path[0]},{path[1]}}}")
+    # 解析最基本的 {GATE, 參數1, 參數2...} 格式，不再需要解析 If
+    pattern = r'\{([A-Za-z]+),([0-9,]+)\}'
+    instructions = re.findall(pattern, cpp_expr)
     
-    # 目標貝爾態轉換：根據需求施加 Z 閘或 X 閘
-    if target_bell in ['Phi-', 'Psi-']:
-        instr.append(f"{{Z,{path[0]}}}")
-    if target_bell in ['Psi+', 'Psi-']:
-        instr.append(f"{{X,{path[1]}}}")
-        
-    # 沿路徑傳遞量子態 (透過 SWAP 操作)
-    for i in range(1, len(path) - 1):
-        instr.append(f"{{SWAP,{path[i]},{path[i+1]}}}")
-        
-        # 動態插入純化 Parity 指令
-        if events[i]['triggered']:
-            # [修改點] 只傳入要做測量的 qubits
-            instr.append(f"{{Parity,{path[0]},{path[i+1]}}}")
-                
-    # 測量起點與終點位元
-    instr.extend([f"{{M,{path[0]}}}", f"{{M,{path[-1]}}}"])
-    # print("[Debug] C++ command: \"" + ", ".join(instr) + "\"")
-    return ", ".join(instr)
-
-def build_qiskit_circuit(num_qubit, path, target_bell='Phi+', error_rate=0.05, threshold=BEST_THRESHOLD):
-    """
-    建構 Qiskit 量子電路物件，包含目標貝爾態之邏輯轉換\n
-    供前端驗證與視覺化使用\n
-    """
-    qc = QuantumCircuit(num_qubit)
-    if not path or len(path) < 2:
-        return qc
-        
-    # 接收引入自 purify 的 4 個 return 值
-    L_path = len(path) - 1
-    _, _, events, _ = _simulate_core(L_path, error_rate, threshold)
-        
-    # 建立基本糾纏態
-    qc.h(path[0])
-    qc.cx(path[0], path[1])
-    
-    # 狀態轉換
-    if target_bell in ['Phi-', 'Psi-']:
-        qc.z(path[0])
-    if target_bell in ['Psi+', 'Psi-']:
-        qc.x(path[1])
-        
-    # 畫出自定義的 Purify 區塊
-    parity_gate = Gate(name='Purify', num_qubits=2, params=[])
-    
-    # 沿路徑進行 SWAP
-    for i in range(1, len(path) - 1):
-        qc.swap(path[i], path[i+1])
-        
-        # 如果有進行純化才畫出盒子
-        # if events[i]['triggered']:
-        #     qc.append(parity_gate, [path[0], path[i+1]])
-    
-    # 標準單點測量
-    cr = ClassicalRegister(2, 'meas')
-    qc.add_register(cr)
-    qc.measure(path[0], 0)
-    qc.measure(path[-1], 1)
-    
+    for gate, params_str in instructions:
+        params = [int(p) for p in params_str.split(',')]
+        if gate == 'H': qc.h(params[0])
+        elif gate == 'X': qc.x(params[0])
+        elif gate == 'Z': qc.z(params[0])
+        elif gate == 'CNOT': qc.cx(params[0], params[1])
+        elif gate == 'SWAP': qc.swap(params[0], params[1])
+        elif gate == 'M':
+            # 將測量結果統一輸出到底部的匯流排對應位置
+            qc.measure(params[0], params[0])
+            
     return qc
 
 
@@ -202,11 +153,9 @@ def _run_single_trace(num_qubit, cpp_expr, cfg, cpp_engine):
     
     pre_meas_snap = None
     for snap in result.snapshots:
-        # === 修改：確保在沒有發生 Parity 時，碰到單點測量 (M) 也能正確截斷以取得測量前快照 ===
         if "Parity" in snap.step_label or "M," in snap.step_label:
             break
         pre_meas_snap = snap
-        # ======================================================================================
         
     return result, pre_meas_snap
 
@@ -240,8 +189,7 @@ def _run_shot_statistics(num_qubit, cpp_expr, cfg, cpp_engine, path, expected_pa
                 
     return counts, parity_success_count
 
-
-def run_cpp_simulation(num_qubit, path, cpp_engine, target_bell='Phi+', threshold=BEST_THRESHOLD):
+def run_cpp_simulation(num_qubit, path, cpp_engine, target_bell='Phi+'):
     """
     初始化並執行 C++ 後端高精度物理模擬的主函式\n
     負責統合單次追蹤與多次統計，並將結果格式化輸出\n
@@ -252,12 +200,11 @@ def run_cpp_simulation(num_qubit, path, cpp_engine, target_bell='Phi+', threshol
         return
         
     cfg = cpp_engine.SimulationConfig()
-    cfg.error_rate = 0.05  # 設定 5% 雜訊
-    cfg.apply_errors = True
-    cfg.track_errors = True
 
     # 轉換器
-    cpp_expr = to_cpp_expression(num_qubit, path, target_bell, cfg.error_rate, threshold)
+    L_val = (num_qubit - 2) // 2
+    cpp_expr = to_cpp_expression(L_val, target_bell)
+    # cpp_expr = to_cpp_expression(num_qubit, path, target_bell)
     expected_parity = 0 if target_bell in ['Phi+', 'Phi-'] else 1
 
     # 執行單次軌跡追蹤
@@ -267,30 +214,10 @@ def run_cpp_simulation(num_qubit, path, cpp_engine, target_bell='Phi+', threshol
     shots = 1000
     counts, parity_success_count = _run_shot_statistics(num_qubit, cpp_expr, cfg, cpp_engine, path, expected_parity, shots)
 
-    # 輸出終端機標準化報表 (維持全英文輸出以對齊介面風格)
-    print(f"\n{'-'*100}\n{'STEP-BY-STEP ERROR DIFFUSION TRACE':^100}\n{'-'*100}")
-    for snap in result.snapshots:
-        if snap.error_record.occurred:
-            err_type = str(snap.error_record.type).split('.')[-1]
-            print(f"[Step {snap.step_index+1:02d}] {snap.step_label:<20} | {err_type}-Error occurred on Q[{snap.error_record.affected_qubit}]!")
-        if "Parity" in snap.step_label:
-            print(f"[Step {snap.step_index+1:02d}] {snap.step_label:<20} | Parity Measured! Wavefunction collapsed, error probability flushed.")
-
-    # 整合輸出：將保真度、誤差分佈與宇稱守恆合併為單一分析區塊
+    # 整合輸出：移除誤差相關資訊
     print(f"\n{'-'*100}\n{'INTEGRATED QUANTUM FIDELITY & PARITY ANALYSIS':^100}\n{'-'*100}")
     print(f"Target State         : {target_bell} (Expected Parity: {'Even(0)' if expected_parity==0 else 'Odd(1)'})")
-    print(f"Hardware Error Rate  : {cfg.error_rate*100:.1f}% per multi-qubit gate")
-    print(f"Total Physical Errors: {result.snapshots[-1].cumulative_errors} hits during this run")
     print(f"{'-'*100}")
-    
-    # 測量前的理論誤差累積 (顯示非零值)
-    print("Pre-Measurement Error Probability (Before Collapse):")
-    if pre_meas_snap and pre_meas_snap.qubit_error_accum:
-        for q, err in enumerate(pre_meas_snap.qubit_error_accum):
-            if err > 1e-9:
-                print(f"  > Q[{q:<2}] accumulated error: {err*100:.2f}%")
-    else:
-        print("  > No significant errors accumulated prior to measurement.")
 
     # 目標位元分佈與宇稱守恆率
     print(f"\nMeasurement Distribution ({shots} Shots):")
@@ -338,11 +265,11 @@ def show_simulation_dashboard(L, graph, path, broken_nodes, qc):
 
     nx.draw(G, pos, ax=ax1, with_labels=True, node_color=node_colors, 
             edge_color=edge_colors, width=widths, node_size=500, font_weight='bold')
-    ax1.set_title(f"Network Topology (L={L}) | Broken: {broken_nodes}")
+    ax1.set_title(f"Network Topology (L={L}, I={L+1}) | Broken: {broken_nodes}")
 
     # 若成功找到路徑，則繪製對應的量子電路圖
     if len(path) > 0:
-        qc.draw('mpl', ax=ax2, fold=-1, idle_wires=False)
+        qc.draw('mpl', ax=ax2, fold=-1)
         ax2.set_title("Generated Quantum Circuit")
     else:
         ax2.text(0.5, 0.5, 'No Path Available', horizontalalignment='center', verticalalignment='center', fontsize=20)
@@ -385,13 +312,6 @@ def run_simulation_flow():
         except ValueError:
             pass
 
-    # 步驟 3：純化閥值輸入
-    try:
-        th_in = input(f"{'\nEnter Purification Threshold [Default: 0.78]':<45}: ")
-        threshold = float(th_in) if th_in.strip() else BEST_THRESHOLD
-    except ValueError:
-        threshold = BEST_THRESHOLD
-
     # 步驟 4：建立拓樸與尋路
     num_qubit = 2 * L + 2
     start_node = 0
@@ -409,34 +329,12 @@ def run_simulation_flow():
         
     print(f"[Success] Path mapped: {path}")
     
-    # 判斷上排路徑是否為直線，決定是否啟用純化
-    expected_straight_path = list(range(L + 1))
-    is_straight_line = (path == expected_straight_path)
-
-    if not is_straight_line:
-        print("\n[Warning] Path is non-straight (routing around broken nodes)!")
-        print("          Bottom row ancilla qubits are potentially occupied or unavailable.")
-        print("          Dynamic Purification is automatically DISABLED for this run.")
-        active_threshold = -1.0  # 設為不可能達到的負值，藉此關閉純化觸發
-    else:
-        active_threshold = threshold
-
     # 步驟 5：建構電路物件並執行 C++ 後端模擬
-    qc = build_qiskit_circuit(num_qubit, path, target_bell, error_rate=0.05, threshold=active_threshold)
-    run_cpp_simulation(num_qubit, path, quantum_cpp, target_bell, threshold=active_threshold)
-
-    # 引入自 purify.py 的日誌輸出功能與互動式詢問
-    if is_straight_line and active_threshold > 0:
-        L_path = len(path) - 1
-        # 使用引入的 4 個 return 值
-        _, _, events, _ = _simulate_core(L_path, 0.05, active_threshold)
-        
-        # 如果有觸發事件，則詢問使用者是否觀看日誌
-        if any(e['triggered'] for e in events):
-            view_log = input(f"{'[Prompt] Purification triggered! View detailed logs? (y/n) [Default: n]':<65}: ").strip().lower()
-            print('')
-            if view_log == 'y':
-                print_simulation_logs(L=L_path, p=0.05, threshold=active_threshold)
+    cpp_expr = to_cpp_expression(L, target_bell)
+    qc = build_qiskit_circuit(num_qubit, cpp_expr)
+    run_cpp_simulation(num_qubit, path, quantum_cpp, target_bell)
+    # qc = build_qiskit_circuit(num_qubit, path, target_bell)
+    # run_cpp_simulation(num_qubit, path, quantum_cpp, target_bell)
     
     # 步驟 6：顯示結果儀表板
     print("[Info] A pop-up window is rendering the dashboard. Close it to continue...")
