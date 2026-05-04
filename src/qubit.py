@@ -116,7 +116,7 @@ def to_cpp_expression(L, target_bell='Phi+'):
     return clean_expr + "," + ",".join(extra_instr)
 
 def build_qiskit_circuit(num_qubit, cpp_expr):
-    print(cpp_expr)
+    # print(cpp_expr)
     # 建立一個擁有 num_qubit 量子位元和 num_qubit 古典位元的電路 (單一匯流排畫圖乾淨)
     qc = QuantumCircuit(num_qubit, num_qubit)
     
@@ -275,7 +275,6 @@ def show_simulation_dashboard(L, graph, path, broken_nodes, qc):
         ax2.text(0.5, 0.5, 'No Path Available', horizontalalignment='center', verticalalignment='center', fontsize=20)
         ax2.axis('off')
 
-    plt.subplots_adjust(hspace=0.5)
     plt.show(block=True)
 
 
@@ -304,13 +303,13 @@ def run_simulation_flow():
     except ValueError:
         L = 5
         
-    broken_in = input(f"\n{'Enter Broken Nodes (e.g.: 2,10) [Default: None]':<45}: ")
+    print(f"\n{'Broken Nodes Not Offer, Sorry':<45}")
     broken_nodes = []
-    if broken_in.strip():
-        try:
-            broken_nodes = [int(x.strip()) for x in broken_in.split(',')]
-        except ValueError:
-            pass
+    # if broken_in.strip():
+    #     try:
+    #         broken_nodes = [int(x.strip()) for x in broken_in.split(',')]
+    #     except ValueError:
+    #         pass
 
     # 步驟 4：建立拓樸與尋路
     num_qubit = 2 * L + 2

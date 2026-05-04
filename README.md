@@ -29,7 +29,7 @@ quantum_project/
 ├── pyproject.toml
 └── src/
     ├── qubit.py              # 量子路由模擬器（主程式進入點）
-    ├── purify.py             # 量子純化優化模組
+    ├── qubit_set.py          # 生成 C++ 量子電路格式字串
     ├── quantum_cpp.pyd       # 編譯後之 C++ 量子模擬引擎
     ├── libstdc++-6.dll       # MSYS2 依賴函式庫
     ├── libgcc_s_seh-1.dll    # MSYS2 依賴函式庫
@@ -119,19 +119,19 @@ pyinstaller --onefile --console --name "QuantumSimulator" --collect-data qiskit 
 **輸出範例：**
 ```
 ----------------------------------------------------------------------------------------------------
-                           QUANTUM PARITY ANALYSIS                            
+                           INTEGRATED QUANTUM FIDELITY & PARITY ANALYSIS                            
 ----------------------------------------------------------------------------------------------------
-Target State         : Psi+ (Expected Parity: Odd(1))
+Target State         : Phi+ (Expected Parity: Even(0))
 ----------------------------------------------------------------------------------------------------
 
 Measurement Distribution (1000 Shots):
-  > |00> : 4.8%
-  > |01> : 46.9%
-  > |10> : 43.1%
-  > |11> : 5.2%
+  > |00> : 49.0%
+  > |11> : 51.0%
 
-[Result] Parity Conservation Rate : 90.0%
+[Result] Parity Conservation Rate : 100.0%
 ----------------------------------------------------------------------------------------------------
+
+[Info] A pop-up window is rendering the dashboard. Close it to continue...
 ```
 
 ## 技術來源與致謝
